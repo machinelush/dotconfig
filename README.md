@@ -1,12 +1,12 @@
 ##Managing plugins with pathogen and github##
 
-'''bash
+```bash
 ln -s.vim/vimrc ~/.vimrc
 ln -s .vim/vimrc  
-'''
-'''git
+```
+```git
 git clone git://github.com/
-'''
+```
 create symlinks    <TARGET> linkname
 
 add plugins as git submodules:
