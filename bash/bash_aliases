@@ -1,0 +1,7 @@
+alias gam="python ~/.gam/gam.py"
+alias setvyh="OAUTHFILE=~/.gam/vyh.oauth.txt"
+alias setphila="OAUTHFILE=~/.gam/vyhphila.oauth.txt"
+alias setaic="OAUTHFILE=~/.gam/aic.oauth.txt"
+alias update="sudo apt-get update"
+alias upgrade="sudo apt-get upgrade"
+alias rm="rm -i"
