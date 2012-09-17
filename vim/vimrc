@@ -11,7 +11,7 @@ set guioptions-=T "removes toolbar
 set ignorecase 
 set smartcase
 set showcmd
-set rnu "sets relative line numbering set nu to get line numbering
+"set rnu "sets relative line numbering set nu to get line numbering
 colorscheme molokai
 
 
