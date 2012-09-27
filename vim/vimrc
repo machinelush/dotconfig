@@ -11,6 +11,11 @@ set guioptions-=T "removes toolbar
 set ignorecase 
 set smartcase
 set showcmd
+set tabstop=4
+set shiftwidth=4
+set softtabstop=4
+set smarttab
+set expandtab
 "set rnu "sets relative line numbering set nu to get line numbering
 colorscheme molokai
 

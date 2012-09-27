@@ -1,0 +1,5 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhist_cnt =3
+let g:netrw_dirhist_1='/home/smichel/workspace/sample_app'
+let g:netrw_dirhist_2='/home/smichel/workspace/sample_app/public'
+let g:netrw_dirhist_3='/home/smichel/workspace/sample_app'
