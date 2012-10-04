@@ -1,12 +1,13 @@
 call pathogen#infect()
 syntax enable
+"Setup solarized colorscheme"
 if has('gui_running')
     set background=dark
 else
     set background=dark
 endif
 set t_Co=256
-let g:solarized_termcolors=256
+let g:solarized_termcolors=16
 colorscheme solarized
 syntax enable
 set nocompatible
@@ -25,8 +26,6 @@ set softtabstop=4
 set smarttab
 set expandtab
 "set rnu "sets relative line numbering set nu to get line numbering
-colorscheme solarized
-
 
 " Setup closetag plugin for html/xml like files
 autocmd FileType html,htmldjango,jinjahtml,eruby,mako let b:closetag_html_style=1 
