@@ -1,0 +1,90 @@
+#  Window rules
+
+alignment top_left
+gap_x 1200
+gap_y 0
+minimum_size 220 0
+maximum_width 500
+own_window yes
+own_window_hints below,skip_pager,skip_taskbar,undecorated,sticky
+# font defaults:
+use_xft yes
+xftfont DejaVu Sans Mono:size=10
+xftalpha 0.9
+override_utf8_locale yes
+own_window_type override
+own_window_transparent yes
+
+## images, buffering, shading
+imlib_cache_size 60
+double_buffer yes
+draw_shades no
+default_shade_color 777777
+
+## misc text formatting
+short_units yes
+pad_percents 0
+border_inner_margin 0
+uppercase no
+use_spacer right
+
+## outlines and borders
+draw_outline no
+draw_borders no
+draw_graph_borders no
+border_width 0
+
+## stdout/console printing
+out_to_ncurses no
+out_to_console no
+
+## process settings
+top_name_width 7
+#no_buffers yes
+
+#### end config
+
+#### Begin display information
+## everything below ‘TEXT’ is drawn on screen
+
+TEXT
+
+###System information###
+
+${font Arial:bold:size=18}${color tan3}$desktop_name
+${font Arial:bold:size=10}${color white}SYSTEM ${color tan3} ${hr 2}
+$font${color DimGray}$nodename
+$sysname $kernel $machine
+${color white}UpTime: ${color tan3}$uptime 
+${color white}Load: ${color tan3}$loadavg 
+${color white}Processes: ${color tan3}$processes \
+${color white}Running: ${color tan3}$running_processes 
+${color white}Highest CPU: 
+${color tan3}${top name 1}${top_mem cpu 1} ${color tan3} 
+${color tan3}${top name 2}${top_mem cpu 2} ${color tan3} \
+
+#Gcal calendar info
+
+${font DejaVu Sans Mono :size=10}${exec gcal –starting-day=monday | cut -c23-44 –complement}
+
+###More system information###
+
+#Time info
+
+${font Arial:bold:size=10}${color white}TIME ${color tan3}${hr 2}
+${color tan3} ${font :size=30}${time %a %H:%Mh}
+${voffset -30}${font :bold:size=10}$alignc${time %d %b. %Y}
+${font :bold:size=10}$alignc${time %A}
+
+${color white}MEM: ${color tan3} $memperc% $mem/$memmax \
+${color white}SWAP: ${color tan3}$swapperc% $swap/$swapmax 
+${color white}ROOT: ${color tan3}${fs_free /}/${fs_size /} 
+${color white}HOME: ${color tan3}${fs_free /home}/${fs_size /home} 
+${color white}HDD: ${color tan3}${fs_free /media/}/${fs_size /media/} 
+${color white}NET: \
+${color white}Up: ${color tan3}${upspeed eth0} k/s \
+${color white}Down: ${color tan3}${downspeed eth0}k/s${color}
+
+#Exaile music player information
+#
+#${execi 1 exaile --get-title} -- ${execi 1 exaile --get-artist} -- ${execi 1 exaile  --current-position} -- ${execi 1 exaile  --get-volume}
