@@ -74,8 +74,9 @@ class AdminAuditService(gdata.apps.service.PropertyService):
       use_char = '&'
     if max_results != None:
       uri += '%smaxResults=%s' % (use_char, max_results)
+    print uri
     try:
-      return self.Get(uri, converter=str)
+      return self.Get(uri)
     except gdata.service.RequestError, e:
       raise gdata.apps.service.AppsForYourDomainException(e.args[0])
     

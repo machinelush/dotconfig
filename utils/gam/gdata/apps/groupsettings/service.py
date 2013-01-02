@@ -97,7 +97,7 @@ class GroupSettingsService(gdata.apps.service.PropertyService):
     members_can_post_as_the_group=None, message_display_font=None, message_moderation_level=None, name=None,
     primary_language=None, reply_to=None, send_message_deny_notification=None, show_in_group_directory=None,
     who_can_invite=None, who_can_join=None, who_can_post_message=None, who_can_view_group=None,
-    who_can_view_membership=None):
+    who_can_view_membership=None, include_in_global_address_list=None, spam_moderation_level=None):
     
     uri = self.MakeGroupSettingsUri(group_email)
     
@@ -158,6 +158,10 @@ class GroupSettingsService(gdata.apps.service.PropertyService):
       xml += template % ('whoCanViewGroup', who_can_view_group, 'whoCanViewGroup')
     if who_can_view_membership != None:
       xml += template % ('whoCanViewMembership', who_can_view_membership, 'whoCanViewMembership')
+    if include_in_global_address_list != None:
+      xml += template % ('includeInGlobalAddressList', include_in_global_address_list, 'includeInGlobalAddressList')
+    if spam_moderation_level != None:
+      xml += template % ('spamModerationLevel', spam_moderation_level, 'spamModerationLevel')
     xml += '</entry>'
     group_settings_entry = self.Put(uri=uri, data=xml)
     group_settings_values = []

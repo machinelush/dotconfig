@@ -24,10 +24,10 @@ For more information, see http://code.google.com/p/google-apps-manager
 """
 
 __author__ = 'jay@ditoweb.com (Jay Lee)'
-__version__ = '2.5'
+__version__ = '2.55'
 __license__ = 'Apache License 2.0 (http://www.apache.org/licenses/LICENSE-2.0)'
 
-import sys, os, time, datetime, random, cgi, socket, urllib, urllib2, csv, getpass, platform, re, webbrowser, pickle, calendar
+import sys, os, time, datetime, random, cgi, socket, urllib, urllib2, csv, getpass, platform, re, webbrowser, pickle, calendar, struct
 import xml.dom.minidom
 from sys import exit
 import gdata.apps.service
@@ -46,7 +46,6 @@ import gdata.calendar
 import gdata.calendar.service
 import gdata.apps.groupsettings.service
 import gdata.apps.reporting.service
-
 import gdata.auth
 import atom
 import gdata.contacts
@@ -79,8 +78,8 @@ def getGamPath():
   return os.path.dirname(os.path.realpath(sys.argv[0]))+divider
 
 def doGAMVersion():
-  print 'Google Apps Manager %s\r\n%s\r\nPython %s.%s.%s %s\r\n%s %s' % (__version__, __author__,
-                   sys.version_info[0], sys.version_info[1], sys.version_info[2],
+  print 'Google Apps Manager %s\r\n%s\r\nPython %s.%s.%s %s-bit %s\r\n%s %s' % (__version__, __author__,
+                   sys.version_info[0], sys.version_info[1], sys.version_info[2], struct.calcsize('P')*8,
                    sys.version_info[3], platform.platform(), platform.machine())
 
 def doGAMCheckForUpdates():
@@ -95,7 +94,7 @@ def doGAMCheckForUpdates():
   one_week_ago_time = now_time - 604800
   if last_check_time > one_week_ago_time: return
   try:
-    c = urllib2.urlopen('https://sites.google.com/a/ditoweb.com/gam-update-site/gam-update/latest-version.txt?v=%s' % __version__)
+    c = urllib2.urlopen('https://gam-update.appspot.com/latest-version.txt?v=%s' % __version__)
     try:
       latest_version = float(c.read())
     except ValueError:
@@ -106,10 +105,10 @@ def doGAMCheckForUpdates():
       f.write(str(now_time))
       f.close()
       return
-    a = urllib2.urlopen('https://sites.google.com/a/ditoweb.com/gam-update-site/gam-update/latest-version-announcement.txt')
+    a = urllib2.urlopen('https://gam-update.appspot.com/latest-version-announcement.txt')
     announcement = a.read()
     sys.stderr.write(announcement)
-    visit_gam = raw_input("\n\nHit Y to visit the GAM website and download the latest release. Hit Enter to just continue with this boring old version. GAM won't bother you with this announcemnt for 1 week or you can create a file named noupdatecheck.txt in the same location as gam.py or gam.exe and GAM won't every check for updates: ")
+    visit_gam = raw_input("\n\nHit Y to visit the GAM website and download the latest release. Hit Enter to just continue with this boring old version. GAM won't bother you with this announcemnt for 1 week or you can create a file named noupdatecheck.txt in the same location as gam.py or gam.exe and GAM won't ever check for updates: ")
     if visit_gam.lower() == 'y':
       webbrowser.open('http://google-apps-manager.googlecode.com')
       print 'GAM is now exiting so that you can overwrite this old version with the latest release'
@@ -118,7 +117,9 @@ def doGAMCheckForUpdates():
     f.write(str(now_time))
     f.close()
   except urllib2.HTTPError:
-    return  
+    return
+  except urllib2.URLError:
+    return
 
 def commonAppsObjInit(appsObj):
   #Identify GAM to Google's Servers
@@ -197,6 +198,8 @@ def checkErrorCode(e):
     return '1500 - Too Many Recipients On Email List'
   elif e.error_code == 1501:
     return '1501 - Too Many Nicknames For User'
+  elif e.error_code == 1502:
+    return '1502 - Too Many Delegates For User'
   elif e.error_code == 1601:
     return '1601 - Duplicate Destinations'
   elif e.error_code == 1602:
@@ -231,12 +234,24 @@ def tryOAuth(gdataObject):
     except ImportError: # Deals with tokens created by windows on old GAM versions. Rewrites them with binary mode set
       oauthfile = open(getGamPath()+oauth_filename, 'r')
       domain = oauthfile.readline()[0:-1]
-      token = pickle.load(oauthfile)
-      oauthfile.close()
-      f = open(getGamPath()+oauth_filename, 'wb')
-      f.write('%s\n' % (domain,))
-      pickle.dump(token, f)
-      f.close()
+      try:
+        token = pickle.load(oauthfile)
+        oauthfile.close()
+        f = open(getGamPath()+oauth_filename, 'wb')
+        f.write('%s\n' % (domain,))
+        pickle.dump(token, f)
+        f.close()
+      except ImportError: # Deals with stupid issue where gdata and atom were copied inside existing folder for awhile and pickle got confused on token creation. Rewrites token.
+        oauthfile = open(getGamPath()+oauth_filename, 'r')
+        domain = oauthfile.readline()[0:-1]
+        token_string = oauthfile.read()
+        oauthfile.close()
+        token_string = token_string.replace('gdata.gdata', 'gdata')
+        token = pickle.loads(token_string)
+        f = open(getGamPath()+oauth_filename, 'wb')
+        f.write('%s\n' % (domain,))
+        pickle.dump(token, f)
+        f.close()
     gdataObject.domain = domain
     gdataObject.SetOAuthInputParameters(gdata.auth.OAuthSignatureMethod.HMAC_SHA1, consumer_key=token.oauth_input_params._consumer.key, consumer_secret=token.oauth_input_params._consumer.secret)
     token.oauth_input_params = gdataObject._oauth_input_params
@@ -390,7 +405,6 @@ def showReport():
       report_data = rep.retrieve_report(report=report, date=date)
       break
     except gdata.apps.service.AppsForYourDomainException, e:
-      print str(e)
       terminating_error = checkErrorCode(e)
       if not terminating_error:
         try_count = try_count + 1
@@ -398,6 +412,9 @@ def showReport():
         time.sleep(wait_on_fail)
         wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
         continue
+      elif e.error_code == 600 and e[0]['reason'] == 'Bad Request':
+        sys.stderr.write('Error: Bad request - No report by that name\n')
+        sys.exit(e.error_code)
       else:
         sys.stderr.write('Error: %s\n' % terminating_error)
         sys.exit(e.error_code)
@@ -507,6 +524,71 @@ def doDelegates(users):
       except gdata.apps.service.AppsForYourDomainException, e:
         terminating_error = checkErrorCode(e)
         if not terminating_error:
+          if try_count == 0:
+            get_try_count = 0
+            get_wait_on_fail = .5
+            get_hard_fail = False
+            while get_try_count < 10:
+              try:
+                get_delegates = emailsettings.GetDelegates(delegator=delegator)
+                break
+              except gdata.apps.service.AppsForYourDomainException, get_e:
+                get_terminating_error = checkErrorCode(get_e)
+                if not get_terminating_error:
+                  get_try_count = get_try_count + 1
+                  if get_try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(get_e.error_code), get_try_count, str(get_wait_on_fail)))
+                  time.sleep(get_wait_on_fail)
+                  get_wait_on_fail = get_wait_on_fail * 2 if get_wait_on_fail < 32 else 60
+                  continue
+                else:
+                  sys.stderr.write('Error: %s\n' % get_terminating_error)
+                  get_hard_fail = True
+                  break
+            if get_try_count == 10 or get_hard_fail:
+              sys.stderr.write('Giving up\n')
+              continue
+            for get_delegate in get_delegates:
+              if get_delegate['address'].lower() == delegate_email: # Delegation is already in place
+                if delete_alias:
+                  print '  Deleting temporary alias...'
+                  doDeleteNickName(alias_email=use_delegate_address)
+                sys.exit(0) # Emulate functionality of duplicate delegation between users in same domain, returning clean
+
+            #Check if either user account is suspended or requires password change
+            multi = getMultiDomainObject()
+            prov_try_count = 0
+            prov_wait_on_fail = .5
+            while prov_try_count < 10:
+              try:
+                delegate_user_details = multi.RetrieveUser(delegate_email)
+                delegator_user_details = multi.RetrieveUser(delegator_email)
+                break
+              except gdata.apps.service.AppsForYourDomainException, prov_e:
+                prov_terminating_error = checkErrorCode(prov_e)
+                if not prov_terminating_error:
+                  prov_try_count = prov_try_count + 1
+                  if prov_try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(prov_e.error_code), prov_try_count, str(prov_wait_on_fail)))
+                  time.sleep(prov_wait_on_fail)
+                  prov_wait_on_fail = prov_wait_on_fail * 2 if prov_wait_on_fail < 32 else 60
+                  continue
+                else:
+                  sys.stderr.write('Error: %s\n' % prov_terminating_error)
+                  sys.exit(prov_e.error_code)
+            if prov_try_count == 10:
+              sys.stderr.write('Giving up\n')
+              sys.exit(prov_e.error_code)
+            if delegate_user_details['isSuspended'] == 'true':
+              sys.stderr.write('Error: User %s is suspended. You must unsuspend for delegation.\n' % delegate_email)
+              sys.exit(5)
+            if delegator_user_details['isSuspended'] == 'true':
+              sys.stderr.write('Error: User %s is suspended. You must unsuspend for delegation.\n' % delegator_email)
+              sys.exit(5)
+            if delegate_user_details['isChangePasswordAtNextLogin'] == 'true':
+              sys.stderr.write('Error: User %s is required to change password at next login. You must change password or clear changepassword flag for delegation.\n' % delegate_email)
+              sys.exit(5)
+            if delegator_user_details['isChangePasswordAtNextLogin'] == 'true':
+              sys.stderr.write('Error: User %s is required to change password at next login. You must change password or clear changepassword flag for delegation.\n' % delegator_email)
+              sys.exit(5)
           try_count = try_count + 1
           if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
           time.sleep(wait_on_fail)
@@ -522,28 +604,7 @@ def doDelegates(users):
     time.sleep(10)
     if delete_alias:
       print '  Deleting temporary alias...'
-      try_count = 0
-      wait_on_fail = .5
-      hard_fail = False
-      while try_count < 10:
-        try:
-          multi.DeleteAlias(use_delegate_address)
-          break
-        except gdata.apps.service.AppsForYourDomainException, e:
-          terminating_error = checkErrorCode(e)
-          if not terminating_error:
-            try_count = try_count + 1
-            if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
-            time.sleep(wait_on_fail)
-            wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
-            continue
-          else:
-            sys.stderr.write('Error: %s\n' % terminating_error)
-            hard_fail = True
-            break
-      if try_count == 10 or hard_fail:
-        sys.stderr.write('Giving up\n')
-        continue
+      doDeleteNickName(alias_email=use_delegate_address)
   
 def getDelegates(users):
   emailsettings = getEmailSettingsObject()
@@ -677,7 +738,6 @@ def addCalendar(users):
       if sys.argv[i+1].lower() == 'true':
         hidden = 'true'
       elif sys.argv[i+1].lower() == 'false':
-        calendar_entry.hidden =  gdata.calendar.Hidden(value='false')
         hidden = 'false'
       else:
         showUsage()
@@ -795,9 +855,12 @@ def doCalendarAddACL():
   role = sys.argv[4].lower()
   if role != 'freebusy' and role != 'read' and role != 'editor' and role != 'owner':
     print 'Error: Role must be freebusy, read, editor or owner. Not %s' % role
-    exit (33)
+    sys.exit (33)
   cal = getCalendarObject()
-  user_to_add = sys.argv[5]
+  user_to_add = sys.argv[5].lower()
+  if user_to_add == 'domain' or user_to_add == 'default':
+    print 'Error: The special users domain and default can\'t be added, please use update instead of add.'
+    sys.exit(34)
   if user_to_add.find('@') == -1:
     user_to_add = user_to_add+'@'+cal.domain
   if use_cal.find('@') == -1:
@@ -815,23 +878,34 @@ def doCalendarAddACL():
       print 'Error: %s - %s' % (e[0]['reason'], e[0]['body'])
       sys.exit(e[0]['status'])
 
+def doCalendarWipeData():
+  use_cal = sys.argv[2]
+  cal = getCalendarObject()
+  try:
+    response = cal.Post('calendarId=%s' % use_cal, 'https://www.googleapis.com/calendar/v3/calendars/%s/clear' % use_cal)
+  except gdata.service.RequestError, e:
+    if e[0]['status'] == 204:
+      print 'All data for Calendar %s has been wiped' % use_cal
+    else:
+      print 'Error: %s - %s' % (e[0]['status'], e[0]['reason'])
+
 def doCalendarUpdateACL():
   use_cal = sys.argv[2]
   role = sys.argv[4].lower()
   if role != 'freebusy' and role != 'read' and role != 'editor' and role != 'owner':
     print 'Error: Role must be freebusy, read, editor or owner. Not %s' % role
     exit (33)
-  user_to_add = sys.argv[5]
+  user_to_add = sys.argv[5].lower()
   cal = getCalendarObject()
   if use_cal.find('@') == -1:
     use_cal = use_cal+'@'+cal.domain
-  if user_to_add.find('@') == -1:
+  if user_to_add.find('@') == -1 and user_to_add != 'domain' and user_to_add != 'default':
     user_to_add = user_to_add+'@'+cal.domain
   rule = gdata.calendar.CalendarAclEntry()
-  if user_to_add.lower() == 'domain':
+  if user_to_add == 'domain':
     rule_value = cal.domain
     rule_type = 'domain'
-  elif user_to_add.lower() == 'default':
+  elif user_to_add == 'default':
     rule_value = None
     rule_type = 'default'
   else:
@@ -860,7 +934,7 @@ def doCalendarDelACL():
   cal = getCalendarObject()
   if use_cal.find('@') == -1:
     use_cal = use_cal+'@'+cal.domain
-  if user_to_del.find('@') == -1:
+  if user_to_del.find('@') == -1 and user_to_del != 'domain' and user_to_del != 'default':
     user_to_del = user_to_del+'@'+cal.domain
   uri = 'https://www.google.com/calendar/feeds/%s/acl/full' % (use_cal)
   try:
@@ -1043,15 +1117,13 @@ def showCalSettings(users):
       user = user[:user.find('@')]
     else:
       user_domain = domain
-    uri = '/calendar/feeds/%s/settings' % (user+'@'+user_domain)
+    uri = 'https://www.googleapis.com/calendar/v3/users/%s/settings' % ('me')
     try:
-      feed = cal.GetCalendarSettingsFeed(uri)
+      feed = cal.Get(uri, converter=str)
     except gdata.service.RequestError, e:
       print 'Error: %s - %s' % (e[0]['reason'], e[0]['body'])
       sys.exit(e[0]['status'])
-    print feed.title.text
-    for i, a_setting in enumerate(feed.entry):
-      print ' %s: %s' % (a_setting.extension_elements[0].attributes['name'], a_setting.extension_elements[0].attributes['value'])
+    print feed
 
 def doImap(users):
   checkTOS = False
@@ -1528,9 +1600,8 @@ def doAdminAudit():
         continue
       else:
         sys.stderr.write('Error: %s\n' % terminating_error)
-        hard_fail = True
-        break
-  if try_count == 10 or hard_fail:
+        sys.exit(e.error_code)
+  if try_count == 10:
     sys.stderr.write('Giving up\n')
     sys.exit(e.error_code)
   aa = getAdminAuditObject()
@@ -2101,7 +2172,7 @@ def doVacation(users):
       message = fp.read()
       fp.close()
       i = i + 2
-    else:  
+    else:
       showUsage()
       sys.exit(2)
   i = 1
@@ -2193,8 +2264,8 @@ def getVacation(users):
 ''' % (user+'@'+emailsettings.domain, vacationsettings['enable'], vacationsettings['contactsOnly'], vacationsettings['domainOnly'], vacationsettings['subject'], vacationsettings['message'], vacationsettings['startDate'], vacationsettings['endDate'])
 
 def doCreateUser():
-  gotFirstName = gotLastName = gotPassword = False
-  suspended = hash_function = change_password = ip_whitelisted = quota_in_gb = is_admin = agreed_to_terms = nohash = None
+  gotFirstName = gotLastName = gotPassword = doOrg = False
+  suspended = hash_function = change_password = ip_whitelisted = quota_in_gb = is_admin = agreed_to_terms = nohash = customer_id = None
   user_email = sys.argv[3]
   i = 4
   while i < len(sys.argv):
@@ -2266,19 +2337,31 @@ def doCreateUser():
         print 'Error: agreedtoterms should be on or off, not %s' % sys.argv[i+1]
         sys.exit(5)
       i = i + 2
+    elif sys.argv[i].lower() == 'org' or sys.argv[i].lower() == 'ou':
+      org = sys.argv[i+1]
+      doOrg = True
+      i = i + 2
+    elif sys.argv[i].lower() == 'customerid':
+      customer_id = sys.argv[i+1]
+      i = i + 2
     else:
       showUsage()
       sys.exit(2)
-  if not (gotFirstName and gotLastName and gotPassword):
-    showUsage()
-    sys.exit(2)
+  if not gotFirstName:
+    first_name = 'Unknown'
+  if not gotLastName:
+    last_name = 'Unknown'
+  if not gotPassword:
+    password = ''.join(random.sample('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789~`!@#$%^&*()-=_+:;"\'{}[]\\|', 25))
   if hash_function == None and not nohash:
     newhash = sha1()
     newhash.update(password)
     password = newhash.hexdigest()
     hash_function = 'SHA-1'
-  print "Creating account for %s" % user_email
   multi = getMultiDomainObject()
+  if user_email.find('@') == -1:
+    user_email = '%s@%s' % (user_email, domain)
+  print "Creating account for %s" % user_email
   try_count = 0
   wait_on_fail = .5
   while try_count < 10:
@@ -2299,6 +2382,29 @@ def doCreateUser():
   if try_count == 10:
     sys.stderr.write('Giving up\n')
     sys.exit(e.error_code)
+  if doOrg:
+    orgObj = getOrgObject()
+    print "Moving %s to org %s" % (user_email, org)
+    try_count = 0
+    wait_on_fail = .5
+    while try_count < 10:
+      try:
+        orgObj.UpdateUserOrganization(user=user_email, new_name=org, customer_id=customer_id)
+        break
+      except gdata.apps.service.AppsForYourDomainException, e:
+        terminating_error = checkErrorCode(e)
+        if not terminating_error:
+          try_count = try_count + 1
+          if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+          time.sleep(wait_on_fail)
+          wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+          continue
+        else:
+          sys.stderr.write('Error: %s\n' % terminating_error)
+          sys.exit(e.error_code)
+    if try_count == 10:
+      sys.stderr.write('Giving up\n')
+      sys.exit(e.error_code)
 
 def doCreateGroup():
   group = sys.argv[3]
@@ -2470,8 +2576,8 @@ def doCreateResource():
     sys.exit(e.error_code)
 
 def doUpdateUser():
-  gotPassword = isMD5 = isSHA1 = False
-  first_name = last_name = password = suspended = hash_function = change_password = ip_whitelisted = quota_in_gb = is_admin = agreed_to_terms = nohash = None
+  gotPassword = isMD5 = isSHA1 = doOrg = False
+  first_name = last_name = password = suspended = hash_function = change_password = ip_whitelisted = quota_in_gb = is_admin = agreed_to_terms = nohash = customer_id = None
   user_email = sys.argv[3]
   i = 4
   do_update_user = False
@@ -2535,6 +2641,20 @@ def doUpdateUser():
       elif sys.argv[i+1].lower() == 'off':
         change_password = False
       i = i + 2
+    elif sys.argv[i].lower() == 'org' or sys.argv[i].lower() == 'ou':
+      doOrg = True
+      org = sys.argv[i+1]
+      i = i + 2
+    elif sys.argv[i].lower() == 'customerid':
+      customer_id = sys.argv[i+1]
+      i = i + 2
+    elif sys.argv[i].lower() == 'agreedtoterms':
+      do_update_user = True
+      if sys.argv[i+1].lower() == 'on':
+        agreed_to_terms = True
+      elif sys.argv[i+1].lower() == 'off':
+        agreed_to_terms = False
+      i = i + 2
     else:
       showUsage()
       sys.exit(2)
@@ -2544,12 +2664,14 @@ def doUpdateUser():
     password = newhash.hexdigest()
     hash_function = 'SHA-1'
   multi = getMultiDomainObject()
+  if user_email.find('@') == -1:
+    user_email = '%s@%s' % (user_email, domain)
   if do_update_user:
     try_count = 0
     wait_on_fail = .5
     while try_count < 10:
       try:
-        multi.UpdateUser(user_email=user_email, password=password, first_name=first_name, last_name=last_name, is_admin=is_admin, hash_function=hash_function,   
+        result = multi.UpdateUser(user_email=user_email, password=password, first_name=first_name, last_name=last_name, is_admin=is_admin, hash_function=hash_function,   
                        change_password=change_password, agreed_to_terms=agreed_to_terms,
                        suspended=suspended, ip_whitelisted=ip_whitelisted, quota_in_gb=quota_in_gb)
         break
@@ -2562,7 +2684,6 @@ def doUpdateUser():
           wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
           continue
         else:
-          print e
           sys.stderr.write('Error: %s\n' % terminating_error)
           sys.exit(e.error_code)
     if try_count == 10:
@@ -2574,6 +2695,29 @@ def doUpdateUser():
     while try_count < 10:
       try:
         multi.RenameUser(old_email=user_email, new_email=new_email)
+        break
+      except gdata.apps.service.AppsForYourDomainException, e:
+        terminating_error = checkErrorCode(e)
+        if not terminating_error:
+          try_count = try_count + 1
+          if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+          time.sleep(wait_on_fail)
+          wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+          continue
+        else:
+          sys.stderr.write('Error: %s\n' % terminating_error)
+          sys.exit(e.error_code)
+    if try_count == 10:
+      sys.stderr.write('Giving up\n')
+      sys.exit(e.error_code)
+  if doOrg:
+    orgObj = getOrgObject()
+    print "Moving %s to org %s" % (user_email, org)
+    try_count = 0
+    wait_on_fail = .5
+    while try_count < 10:
+      try:
+        orgObj.UpdateUserOrganization(user=user_email, new_name=org, customer_id=customer_id)
         break
       except gdata.apps.service.AppsForYourDomainException, e:
         terminating_error = checkErrorCode(e)
@@ -2606,9 +2750,47 @@ def doUpdateGroup():
     else:
       email = user
     if userType == 'Member':
-      result = groupObj.AddMemberToGroup(email, group)
+      try_count = 0
+      wait_on_fail = .5
+      while try_count < 10:
+        try:
+          result = groupObj.AddMemberToGroup(email, group)
+          break
+        except gdata.apps.service.AppsForYourDomainException, e:
+          terminating_error = checkErrorCode(e)
+          if not terminating_error:
+            try_count = try_count + 1
+            if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+            time.sleep(wait_on_fail)
+            wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+            continue
+          else:
+            sys.stderr.write('Error: %s\n' % terminating_error)
+            sys.exit(e.error_code)
+      if try_count == 10:
+        sys.stderr.write('Giving up\n')
+        sys.exit(e.error_code)
     elif userType == 'Owner':
-      result2 = groupObj.AddOwnerToGroup(email, group)
+      try_count = 0
+      wait_on_fail = .5
+      while try_count < 10:
+        try:
+          result2 = groupObj.AddOwnerToGroup(email, group)
+          break
+        except gdata.apps.service.AppsForYourDomainException, e:
+          terminating_error = checkErrorCode(e)
+          if not terminating_error:
+            try_count = try_count + 1
+            if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+            time.sleep(wait_on_fail)
+            wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+            continue
+          else:
+            sys.stderr.write('Error: %s\n' % terminating_error)
+            sys.exit(e.error_code)
+      if try_count == 10:
+        sys.stderr.write('Giving up\n')
+        sys.exit(e.error_code)
   elif sys.argv[4].lower() == 'remove':
     if sys.argv[5].lower() == 'owner':
       userType = 'Owner'
@@ -2620,9 +2802,48 @@ def doUpdateGroup():
     else:
       email = user
     if userType == 'Member':
-      result = groupObj.RemoveMemberFromGroup(email, group)
+      try_count = 0
+      wait_on_fail = .5
+      while try_count < 10:
+        try:
+          result = groupObj.RemoveMemberFromGroup(email, group)
+          break
+        except gdata.apps.service.AppsForYourDomainException, e:
+          terminating_error = checkErrorCode(e)
+          if not terminating_error:
+            try_count = try_count + 1
+            if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+            time.sleep(wait_on_fail)
+            wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+            continue
+          else:
+            sys.stderr.write('Error: %s\n' % terminating_error)
+            sys.exit(e.error_code)
+      if try_count == 10:
+        sys.stderr.write('Giving up\n')
+        sys.exit(e.error_code)
     elif userType == 'Owner':
-      result = groupObj.RemoveOwnerFromGroup(email, group)
+      try_count = 0
+      wait_on_fail = .5
+      while try_count < 10:
+        try:
+          result = groupObj.RemoveOwnerFromGroup(email, group)
+          break
+        except gdata.apps.service.AppsForYourDomainException, e:
+          terminating_error = checkErrorCode(e)
+          if not terminating_error:
+            try_count = try_count + 1
+            if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+            time.sleep(wait_on_fail)
+            wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+            continue
+          else:
+            sys.stderr.write('Error: %s\n' % terminating_error)
+            sys.exit(e.error_code)
+      if try_count == 10:
+        sys.stderr.write('Giving up\n')
+        sys.exit(e.error_code)
+
   else:
     i = 4
     use_prov_api = True
@@ -2670,7 +2891,7 @@ def doUpdateGroup():
         sys.stderr.write('Giving up\n')
         sys.exit(e.error_code)
     else:
-      allow_external_members = allow_google_communication = allow_web_posting = archive_only = custom_reply_to = default_message_deny_notification_text = description = is_archived = max_message_bytes = members_can_post_as_the_group = message_display_font = message_moderation_level = name = primary_language = reply_to = send_message_deny_notification = show_in_group_directory = who_can_invite =  who_can_join = who_can_post_message = who_can_view_group = who_can_view_membership = None
+      allow_external_members = allow_google_communication = allow_web_posting = archive_only = custom_reply_to = default_message_deny_notification_text = description = is_archived = max_message_bytes = members_can_post_as_the_group = message_display_font = message_moderation_level = name = primary_language = reply_to = send_message_deny_notification = show_in_group_directory = who_can_invite =  who_can_join = who_can_post_message = who_can_view_group = who_can_view_membership = include_in_global_address_list = spam_moderation_level = None
       while i < len(sys.argv):
         if sys.argv[i].lower() == 'allow_external_members':
           allow_external_members = sys.argv[i+1].lower()
@@ -2678,10 +2899,22 @@ def doUpdateGroup():
             print 'Error: Value for allow_external_members must be true or false. Got %s' % allow_external_members
             sys.exit(9)
           i = i + 2
+        elif sys.argv[i].lower() == 'include_in_global_address_list':
+          include_in_global_address_list = sys.argv[i+1].lower()
+          if include_in_global_address_list != 'true' and include_in_global_address_list != 'false':
+            print 'Error: Value for include_in_global_address_list must be true or false. Got %s' % include_in_global_address_list
+            sys.exit(9)
+          i = i + 2
+        elif sys.argv[i].lower() == 'spam_moderation_level':
+          spam_moderation_level = sys.argv[i+1].upper()
+          if spam_moderation_level != 'ALLOW' and spam_moderation_level != 'MODERATE' and spam_moderation_level != 'SILENTLY_MODERATE' and spam_moderation_level != 'REJECT':
+            print 'Error: Value for spam_moderation_level must be allow, moderate, silently_moderate or reject. Got %s' % spam_moderation_level
+            sys.exit(9)
+          i = i + 2
         elif sys.argv[i].lower() == 'message_moderation_level':
           message_moderation_level = sys.argv[i+1].upper()
           if message_moderation_level != 'MODERATE_ALL_MESSAGES' and message_moderation_level != 'MODERATE_NEW_MEMBERS' and message_moderation_level != 'MODERATE_NONE' and message_moderation_level != 'MODERATE_NON_MEMBERS':
-            print 'Error: Value for message_moderation_level must be moderate_all_message, moderate_new_members, moderate_none or moderate_non_members. Got %s' % allow_external_members
+            print 'Error: Value for message_moderation_level must be moderate_all_messages, moderate_new_members, moderate_none or moderate_non_members. Got %s' % allow_external_members
             sys.exit(9)
           i = i + 2
         elif sys.argv[i].lower() == 'name':
@@ -2734,8 +2967,8 @@ def doUpdateGroup():
           i = i + 2
         elif sys.argv[i].lower() == 'who_can_view_membership':
           who_can_view_membership = sys.argv[i+1].upper()
-          if who_can_view_membership != 'ALL_IN_DOMAIN_CAN_VIEW' and who_can_view_membership != 'ALL_MANAGERS_CAN_VIEW' and who_can_view_membership != 'ALL_MEMBERS_CAN_VIEW' and who_can_view_membership != 'ANYONE_CAN_VIEW':
-            print 'Error: Value for who_can_view_membership must be all_in_domain_can_view, all_managers_can_view, all_members_can_view or anyone_can_view. Got %s' % who_can_view_membership
+          if who_can_view_membership != 'ALL_IN_DOMAIN_CAN_VIEW' and who_can_view_membership != 'ALL_MANAGERS_CAN_VIEW' and who_can_view_membership != 'ALL_MEMBERS_CAN_VIEW':
+            print 'Error: Value for who_can_view_membership must be all_in_domain_can_view, all_managers_can_view or all_members_can_view. Got %s' % who_can_view_membership
             sys.exit(9)
           i = i + 2
         elif sys.argv[i].lower() == 'allow_google_communication':
@@ -2806,7 +3039,7 @@ def doUpdateGroup():
       wait_on_fail = .5
       while try_count < 10:
         try:
-          results = gs.UpdateGroupSettings(group_email=group, allow_external_members=allow_external_members, allow_google_communication=allow_google_communication, allow_web_posting=allow_web_posting, archive_only=archive_only, custom_reply_to=custom_reply_to, default_message_deny_notification_text=default_message_deny_notification_text, description=description, is_archived=is_archived, max_message_bytes=max_message_bytes, members_can_post_as_the_group=members_can_post_as_the_group, message_display_font=message_display_font, message_moderation_level=message_moderation_level, name=name, primary_language=primary_language, reply_to=reply_to, send_message_deny_notification=send_message_deny_notification, show_in_group_directory=show_in_group_directory, who_can_invite=who_can_invite, who_can_join=who_can_join, who_can_post_message=who_can_post_message, who_can_view_group=who_can_view_group, who_can_view_membership=who_can_view_membership)
+          results = gs.UpdateGroupSettings(group_email=group, allow_external_members=allow_external_members, allow_google_communication=allow_google_communication, allow_web_posting=allow_web_posting, archive_only=archive_only, custom_reply_to=custom_reply_to, default_message_deny_notification_text=default_message_deny_notification_text, description=description, is_archived=is_archived, max_message_bytes=max_message_bytes, members_can_post_as_the_group=members_can_post_as_the_group, message_display_font=message_display_font, message_moderation_level=message_moderation_level, name=name, primary_language=primary_language, reply_to=reply_to, send_message_deny_notification=send_message_deny_notification, show_in_group_directory=show_in_group_directory, who_can_invite=who_can_invite, who_can_join=who_can_join, who_can_post_message=who_can_post_message, who_can_view_group=who_can_view_group, who_can_view_membership=who_can_view_membership, include_in_global_address_list=include_in_global_address_list, spam_moderation_level=spam_moderation_level)
           break
         except gdata.service.RequestError, e:
           if e[0]['status'] == 503 and e[0]['reason'] == 'Service Unavailable':
@@ -3056,8 +3289,116 @@ def doUpdateOrg():
     sys.stderr.write('Giving up\n')
     sys.exit(e.error_code)
 
-def doGetUserInfo():
-  user_email = sys.argv[3]
+def doWhatIs():
+  email = sys.argv[2]
+  multi = getMultiDomainObject()
+  if email.find('@') == -1:
+    email = '%s@%s' % (email, multi.domain)
+  try_count = 0
+  wait_on_fail = .5
+  while try_count < 10:
+    try:
+      user = multi.RetrieveAlias(email)
+      sys.stderr.write('%s is an alias\n\n' % email)
+      doGetNickNameInfo(alias_email=email)
+      return
+    except gdata.apps.service.AppsForYourDomainException, e:
+      terminating_error = checkErrorCode(e)
+      if not terminating_error:
+        try_count = try_count + 1
+        if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+        time.sleep(wait_on_fail)
+        wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+        continue
+      elif e.error_code == 1301:
+        sys.stderr.write('%s is not an alias...\n' % email)
+        break
+      else:
+        sys.stderr.write('Error: %s\n' % terminating_error)
+        sys.exit(e.error_code)
+  if try_count == 10:
+    sys.stderr.write('Giving up\n')
+    sys.exit(e.error_code)
+  try_count = 0
+  wait_on_fail = .5
+  while try_count < 10:
+    try:
+      user = multi.RetrieveUser(email)
+      sys.stderr.write('%s is a user\n\n' % email)
+      doGetUserInfo(user_email=email)
+      return
+    except gdata.apps.service.AppsForYourDomainException, e:
+      terminating_error = checkErrorCode(e)
+      if not terminating_error:
+        try_count = try_count + 1
+        if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+        time.sleep(wait_on_fail)
+        wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+        continue
+      elif e.error_code == 1301:
+        sys.stderr.write('%s is not a user...\n' % email)
+        break
+      else:
+        sys.stderr.write('Error: %s\n' % terminating_error)
+        sys.exit(e.error_code)
+  if try_count == 10:
+    sys.stderr.write('Giving up\n')
+    sys.exit(e.error_code)
+  groupObj = getGroupsObject()
+  try_count = 0
+  wait_on_fail = .5
+  while try_count < 10:
+    try:
+      user = groupObj.RetrieveGroup(email)
+      sys.stderr.write('%s is a group\n\n' % email)
+      doGetGroupInfo(group_name=email)
+      return
+    except gdata.apps.service.AppsForYourDomainException, e:
+      terminating_error = checkErrorCode(e)
+      if not terminating_error:
+        try_count = try_count + 1
+        if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+        time.sleep(wait_on_fail)
+        wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+        continue
+      elif e.error_code == 1301:
+        sys.stderr.write('%s is not a group either. Email address doesn\'t seem to exist!\n' % email)
+        return
+      else:
+        sys.stderr.write('Error: %s\n' % terminating_error)
+        sys.exit(e.error_code)
+  if try_count == 10:
+    sys.stderr.write('Giving up\n')
+    sys.exit(e.error_code)
+  try_count = 0
+  wait_on_fail = .5
+  while try_count < 10:
+    try:
+      user = multi.RetrieveAlias(email)
+      sys.stderr.write('%s is an alias\n\n' % email)
+      doGetNickNameInfo(alias_email=email)
+      return
+    except gdata.apps.service.AppsForYourDomainException, e:
+      terminating_error = checkErrorCode(e)
+      if not terminating_error:
+        try_count = try_count + 1
+        if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+        time.sleep(wait_on_fail)
+        wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+        continue
+      elif e.error_code == 1301:
+        sys.stderr.write('Not an alias...\n')
+        break
+      else:
+        sys.stderr.write('Error: %s\n' % terminating_error)
+        sys.exit(e.error_code)
+  if try_count == 10:
+    sys.stderr.write('Giving up\n')
+    sys.exit(e.error_code)
+
+def doGetUserInfo(user_email=None):
+  if user_email == None:
+    user_email = sys.argv[3]
   getAliases = getGroups = getOrg = True
   i = 4
   while i < len(sys.argv):
@@ -3177,8 +3518,9 @@ def doGetUserInfo():
         directIndirect = 'indirect'
       print '  ' + group['groupName'] + ' <' + group['groupId'] + '> (' + directIndirect + ' member)'
    
-def doGetGroupInfo():
-  group_name = sys.argv[3]
+def doGetGroupInfo(group_name=None):
+  if group_name == None:
+    group_name = sys.argv[3]
   show_group_settings = False
   try:
     if sys.argv[4].lower() == 'settings':
@@ -3323,8 +3665,9 @@ def doGetGroupInfo():
       setting_value = setting_value
       print ' %s: %s' % (setting_key, setting_value)
 
-def doGetNickNameInfo():
-  alias_email = sys.argv[3]
+def doGetNickNameInfo(alias_email=None):
+  if alias_email == None:
+    alias_email = sys.argv[3]
   multi = getMultiDomainObject()
   try_count = 0
   wait_on_fail = .5
@@ -3536,14 +3879,22 @@ def doUpdateDomain():
           wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
           continue
         else:
+          if e[0]['status'] == 400:
+            print 'Record Name: Error - Google disabled this function.'
+            print 'Verification Method: Error - Google disabled this function.'
+            print 'Verified: Error - Google disabled this functino.'
+            break
           sys.stderr.write('Error: %s\n' % terminating_error)
           sys.exit(e.error_code)
     if try_count == 10:
       sys.stderr.write('Giving up\n')
       sys.exit(e.error_code)
-    print 'Record Name: %s' % result['recordName']
-    print 'Verification Method: %s' % result['verificationMethod']
-    print 'Verified: %s' % result['verified']
+    try:
+      print 'Record Name: %s' % result['recordName']
+      print 'Verification Method: %s' % result['verificationMethod']
+      print 'Verified: %s' % result['verified']
+    except UnboundLocalError:
+      pass
   elif command == 'mx_verify':
     try_count = 0
     wait_on_fail = .5
@@ -3698,6 +4049,12 @@ def doUpdateDomain():
         else:
           sys.stderr.write('Error: %s\n' % terminating_error)
           sys.exit(e.error_code)
+      except TypeError, e:
+        if gateway == "":
+          break
+        else:
+          print e
+          exit(3)
     if try_count == 10:
       sys.stderr.write('Giving up\n')
       sys.exit(e.error_code)
@@ -4057,14 +4414,22 @@ def doGetDomainInfo():
         wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
         continue
       else:
+        if e[0]['status'] == 400:
+          print 'CNAME Verification Record Name: Error - Google disabled this function.'
+          print 'CNAME Verification Verified: Error - Google disabled this function.'
+          print 'CNAME Verification Method: Error - Google disabled this functino.'
+          break
         sys.stderr.write('Error: %s\n' % terminating_error)
         sys.exit(e.error_code)
   if try_count == 10:
     sys.stderr.write('Giving up\n')
     sys.exit(e.error_code)
-  print 'CNAME Verification Record Name: ', cnameverificationstatus['recordName']
-  print 'CNAME Verification Verified: ', cnameverificationstatus['verified']
-  print 'CNAME Verification Method: ', cnameverificationstatus['verificationMethod']
+  try:
+    print 'CNAME Verification Record Name: %s' % cnameverificationstatus['recordName']
+    print 'CNAME Verification Verified: %s' % cnameverificationstatus['verified']
+    print 'CNAME Verification Method: %s' %cnameverificationstatus['verificationMethod']
+  except UnboundLocalError:
+    pass
   try_count = 0
   wait_on_fail = .5
   while try_count < 10:
@@ -4191,6 +4556,7 @@ def doGetDomainInfo():
   wait_on_fail = .5
   while try_count < 10:
     try:
+      outbound_gateway_settings = {'smartHost': '', 'smtpMode': ''} # Initialize blank in case we get an 1801 Error
       outbound_gateway_settings = adminObj.GetOutboundGatewaySettings()
       break
     except gdata.apps.service.AppsForYourDomainException, e:
@@ -4201,27 +4567,34 @@ def doGetDomainInfo():
         time.sleep(wait_on_fail)
         wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
         continue
+      elif e.error_code == 1801:
+        break
       else:
         sys.stderr.write('Error: %s\n' % terminating_error)
         sys.exit(e.error_code)
   if try_count == 10:
     sys.stderr.write('Giving up\n')
     sys.exit(e.error_code)
-  print 'Outbound Gateway Smart Host: ', outbound_gateway_settings['smartHost']
+  try:
+    print 'Outbound Gateway Smart Host: ', outbound_gateway_settings['smartHost']
+  except KeyError:
+    print '' 
   try:
     print 'Outbound Gateway SMTP Mode: ', outbound_gateway_settings['smtpMode']
   except KeyError:
-    print 'Not Set'
+    print ''
 
 def doDeleteUser():
   user_email = sys.argv[3]
   multi = getMultiDomainObject()
   if user_email.find('@') == -1:
     user_email = '%s@%s' % (user_email, multi.domain)
-  do_rename = True
+  do_rename = False
   try:
     if sys.argv[4].lower() == 'norename':
       do_rename = False
+    elif sys.argv[4].lower() == 'dorename':
+      do_rename = True
   except IndexError:
     pass
   print "Deleting account for %s" % (user_email)
@@ -4258,7 +4631,7 @@ def doDeleteUser():
       sys.stderr.write('Giving up\n')
       sys.exit(e.error_code)
     print 'Renamed %s to %s' % (user_email, renameduser_email)
-  user_to_delete = renameduser_email
+    user_to_delete = renameduser_email
   try_count = 0
   wait_on_fail = .5
   while try_count < 10:
@@ -4306,8 +4679,9 @@ def doDeleteGroup():
     sys.stderr.write('Giving up\n')
     sys.exit(e.error_code)
 
-def doDeleteNickName():
-  alias_email = sys.argv[3]
+def doDeleteNickName(alias_email=None):
+  if alias_email == None:
+    alias_email = sys.argv[3]
   multi = getMultiDomainObject()
   print "Deleting alias %s" % alias_email
   try_count = 0
@@ -4334,7 +4708,7 @@ def doDeleteNickName():
 def doDeleteResourceCalendar():
   res_id = sys.argv[3]
   rescal = getResCalObject()
-  print "Deleting resource calendar %s" % name
+  print "Deleting resource calendar %s" % res_id
   try_count = 0
   wait_on_fail = .5
   while try_count < 10:
@@ -4600,12 +4974,35 @@ def doPrintUsers():
     except ValueError:
       raise
     del(email, domain)
+  del(all_users)
   total_users = len(user_attributes) - 1
   multi = getMultiDomainObject()
   if getUserFeed:
     sys.stderr.write("Getting details for all users... (may take some time on a large Google Apps account)... ")
-    all_users = multi.RetrieveAllUsers()
-    sys.stderr.write("done.\r\n")
+    try_count = 0
+    wait_on_fail = .5
+    while try_count < 10:
+      try:
+        all_users = multi.RetrieveAllUsers()
+        break
+      except gdata.apps.service.AppsForYourDomainException, e:
+        terminating_error = checkErrorCode(e)
+        if not terminating_error:
+          try_count = try_count + 1
+          if try_count > 5: sys.stderr.write('Temporary error %s. Retry %s in %s seconds\n' % (str(e.error_code), try_count, str(wait_on_fail)))
+          time.sleep(wait_on_fail)
+          wait_on_fail = wait_on_fail * 2 if wait_on_fail < 32 else 60
+          continue
+        else:
+          sys.stderr.write('Error: %s\n' % terminating_error)
+          sys.exit(e.error_code)
+      except socket.error, e:
+        sys.stderr.write('Network Error, retrying\n')
+        continue
+    if try_count == 10:
+      sys.stderr.write('Giving up\n')
+      sys.exit(e.error_code)
+    sys.stderr.write("done.\n")
     for user in all_users:
       email = user['userEmail'].lower()
       try:
@@ -4657,6 +5054,10 @@ def doPrintUsers():
       except ValueError:
         pass
       del (email)
+  try:
+    del(all_users)
+  except UnboundLocalError:
+    pass
   if getNickFeed:
     for user in user_attributes[1:]:
       user['Aliases'] = ''
@@ -4698,6 +5099,10 @@ def doPrintUsers():
     for user in user_attributes[1:]:
       if user['Aliases'][-1:] == ' ':
         user['Aliases'] = user['Aliases'][:-1]
+  try:
+    del(aliases)
+  except UnboundLocalError:
+    pass
   if getGroupFeed:
     groupsObj = getGroupsObject()
     user_count = 1
@@ -4790,8 +5195,6 @@ def doPrintGroups():
       titles.append('who_Can_Post_Message')
       group_attributes[0].update(allow_Web_Posting='allow_Web_Posting')
       titles.append('allow_Web_Posting')
-      group_attributes[0].update(primary_Language='primary_Language')
-      titles.append('primary_Language')
       group_attributes[0].update(max_Message_Bytes='max_Message_Bytes')
       titles.append('max_Message_Bytes')
       group_attributes[0].update(is_Archived='is_Archived')
@@ -4800,6 +5203,8 @@ def doPrintGroups():
       titles.append('archive_Only')
       group_attributes[0].update(message_Moderation_Level='message_Moderation_Level')
       titles.append('message_Moderation_Level')
+      group_attributes[0].update(primary_Language='primary_Language')
+      titles.append('primary_Language')
       group_attributes[0].update(reply_To='reply_To')
       titles.append('reply_To')
       group_attributes[0].update(custom_Reply_To='custom_Reply_To')
@@ -4816,6 +5221,10 @@ def doPrintGroups():
       titles.append('members_Can_Post_As_The_Group')
       group_attributes[0].update(message_Display_Font='message_Display_Font')
       titles.append('message_Display_Font')
+      group_attributes[0].update(include_In_Global_Address_List='include_In_Global_Address_List')
+      titles.append('include_In_Global_Address_List')
+      group_attributes[0].update(spam_Moderation_Level='spam_Moderation_Level')
+      titles.append('spam_Moderation_Level')
       settings = True
       i = i + 1
     else:
@@ -5021,9 +5430,8 @@ def doPrintGroups():
           setting_value = ''
         group.update({setting_key: setting_value})
     group_attributes.append(group)
-
   csv.register_dialect('nixstdout', lineterminator='\n')
-  writer = csv.DictWriter(sys.stdout, fieldnames=titles, dialect='nixstdout', quoting=csv.QUOTE_MINIMAL)
+  writer = csv.DictWriter(sys.stdout, fieldnames=titles, dialect='nixstdout', quoting=csv.QUOTE_MINIMAL, extrasaction='ignore')
   writer.writerows(group_attributes)
 
 def doPrintOrgs():
@@ -5964,13 +6372,30 @@ def doRequestOAuth():
     if visit_dito.lower() == 'y':
       webbrowser.open('http://www.ditoweb.com?s=gam')
   domain = raw_input("\nEnter your Primary Google Apps Domain (e.g. example.com): ")
-  print "\nIf you plan to use Group Settings commands, you\'ll need an Client ID and secret from the Google API console, see http://code.google.com/p/google-apps-manager/wiki/GettingAnOAuthConsoleKey for details. If you don\'t plan to use Group Settings commands you can just press enter here."
-  client_key = raw_input("\nEnter your Client ID (e.g. XXXXXX.apps.googleusercontent.com or leave blank): ")
-  if client_key == '':
-    client_key = 'anonymous'
-    client_secret = 'anonymous'
+  if os.path.isfile(getGamPath()+'key-and-secret.txt'):
+    secret_file = open(getGamPath()+'key-and-secret.txt', 'rb')
+    client_key = secret_file.readline()
+    if client_key[-1:] == "\n" or client_key[-1:] == "\r":
+      client_key = client_key[:-1]
+    client_secret = secret_file.readline()
+    if client_secret[-1:] == "\n" or client_secret[-1:] == "\r":
+      client_secret = client_secret[:-1]
+    secret_file.close()
+    print "\nUsing Client Key and Secret from %s:\n\tClient Key: \"%s\"\n\tClient Secret: \"%s\"\n\nPress Enter to Continue...\n" % (getGamPath()+'key-and-secret.txt', client_key, client_secret)
+    raw_input()
   else:
-    client_secret = raw_input("\nEnter your Client Secret: ")
+    print "\nIf you plan to use Group Settings commands, you\'ll need an Client ID and secret from the Google API console, see http://code.google.com/p/google-apps-manager/wiki/GettingAnOAuthConsoleKey for details. If you don\'t plan to use Group Settings commands you can just press enter here."
+    client_key = raw_input("\nEnter your Client ID (e.g. XXXXXX.apps.googleusercontent.com or leave blank): ")
+    if client_key == '':
+      client_key = 'anonymous'
+      client_secret = 'anonymous'
+    else:
+      client_secret = raw_input("\nEnter your Client Secret: ")
+      save_secret = raw_input('Do you wish to save the Client Key and Secret to %s for future use? (y/N): ' % (getGamPath()+'key-and-secret.txt'))
+      if save_secret.lower() == 'y':
+        secret_file = open(getGamPath()+'key-and-secret.txt', 'wb')
+        secret_file.write('%s\n%s' % (client_key, client_secret))
+        secret_file.close()
   fetch_params = {'xoauth_displayname':'Google Apps Manager'}
   selected_scopes = ['*', '*', '*', '*', '*', '*', '*', '*', '*', '*', '*', '*', '*']
   menu = '''Select the authorized scopes for this OAuth token and set the token name:
@@ -6049,6 +6474,8 @@ def doRequestOAuth():
   for i in range(0, len(selected_scopes)):
     if selected_scopes[i] == '*':
       scopes.append(possible_scopes[i])
+      if possible_scopes[i] == 'https://www.google.com/calendar/feeds/':
+        scopes.append('https://www.googleapis.com/auth/calendar') # Get the new Calendar API scope also
   apps = gdata.apps.service.AppsService(domain=domain)
   apps = commonAppsObjInit(apps)
   apps.SetOAuthInputParameters(gdata.auth.OAuthSignatureMethod.HMAC_SHA1, consumer_key=client_key, consumer_secret=client_secret)
@@ -6214,9 +6641,14 @@ try:
       doCalendarDelACL()
     elif sys.argv[3].lower() == 'update':
       doCalendarUpdateACL()
+    elif sys.argv[3].lower() == 'wipe':
+      doCalendarWipeData()
     sys.exit(0)
   elif sys.argv[1].lower() == 'report':
     showReport()
+    sys.exit(0)
+  elif sys.argv[1].lower() == 'whatis':
+    doWhatIs()
     sys.exit(0)
   users = getUsersToModify()
   command = sys.argv[3].lower()

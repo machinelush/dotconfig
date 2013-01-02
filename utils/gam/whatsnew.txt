@@ -1,3 +1,36 @@
+GAM 2.55
+  -Fix change in Google APIs broke "gam whatis" command.
+  -Fix change in Google APIs broke "gam info domain" command on CNAME Verification Status message.
+
+GAM 2.54
+  -Fix a stupid bug that broke "gam print users" when used without additional attributes.
+  -Another fix for outbound gateway settings on "gam info domain"
+  -Get this whatsnew.txt doc up to date.
+
+GAM 2.53
+  -Two new group settings, spam_moderation_level and include_in_global_address_list allow further customization of your Google Groups.
+  -Error reporting for mailbox delegation has been further improved, GAM does a better job of pinpointing why a delegation failed.
+  -Fixed updating and deleting domain and default users for calendar ACLs
+  -proper error handling for adding and removing group members and owners
+  -Fixed error on gam info domain caused by failure to retrieve outbound gateway settings.
+  -An EXPERIMENTAL 64-bit build of GAM for Windows is now available. I do not expect it will be any bit faster for most GAM commands since most delay
+   is due to network I/O. However, some GAM commands like "gam print users", when run against large domains (10,000+ users), use a large amount of memory
+   and resources due to result size. In these scenarios, the x64 build MIGHT prove faster. If you try the x64 build, please report how it worked back to 
+   the mailing list. "It feels faster" is nice but hard numbers with details of what you did are better :-) Note that if you're using the Python source
+   build and your Python is 64-bit, you're already using 64-bit GAM :-)
+
+GAM 2.52
+  -It's a dud! Major bug caused me to pull this version 10 minutes after release :-)
+
+GAM 2.51
+  -New gam calendar wipe command allows clearing all data off a user's primary calendar
+  -create user and update user commands now support setting user's org.
+  -gam whatis command allows looking up an email address to determine if it's a user, alias or group.
+  -gam delete user no longer renames a user by default since undelete is now in CPanel. Added optional dorename parameter to force old renaming behavior.
+  -Fix issue that broke gam delete resource command
+  -GAM now offers to remember your client secret and key when entered the first time
+  -various other bug fixes
+
 GAM 2.5
   -GAM now handles and retries errors consistently and provides nice error messages. Long running GAM processes
    like "gam all users" should be much stabler now. Death to the 1000/Unknown errors!

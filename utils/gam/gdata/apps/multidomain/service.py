@@ -88,7 +88,7 @@ class MultiDomainService(gdata.apps.service.PropertyService):
     if agreed_to_terms != None:
       properties['agreedToTerms'] = gdata.apps.service._bool2str(agreed_to_terms)
     if suspended != None:
-      properties['suspended'] = gdata.apps.service._bool2str(suspended)
+      properties['isSuspended'] = gdata.apps.service._bool2str(suspended)
     if ip_whitelisted != None:
       properties['ipWhitelisted'] = gdata.apps.service._bool2str(ip_whitelisted)
     if quota_in_gb != None:
@@ -109,7 +109,7 @@ class MultiDomainService(gdata.apps.service.PropertyService):
     if user_email.find('@') == -1:
       user_email = '%s@%s' % (user_email, self.domain)
     uri = self._serviceUrl(setting_id='user', email=user_email)
-    return self.Delete(uri)
+    return self._DeleteProperties(uri)
 
   def RenameUser(self, old_email, new_email):
     if old_email.find('@') == -1:

@@ -77,7 +77,7 @@ class OrganizationService(gdata.apps.service.PropertyService):
 
   def UpdateUserOrganization(self, user, new_name, old_name=None, customer_id=None):
 
-    if customer_id == None:
+    if customer_id = None:
       customer_id = self.RetrieveCustomerId()['customerId']
     uri = '/a/feeds/orguser/2.0/%s/%s' % (customer_id, urllib.quote_plus(user))
     properties = {}

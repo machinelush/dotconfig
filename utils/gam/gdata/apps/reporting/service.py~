@@ -84,7 +84,7 @@ class ReportService(gdata.apps.service.PropertyService):
     <reportName>%s</reportName>
 </rest>''' % (self.domain, date, page, report)
       try:
-        report_page = self.Post(xml, uri, converter=str)
+        report_page = self._PostProperties(xml, uri, converter=str)
       except gdata.service.RequestError, e:
         raise gdata.apps.service.AppsForYourDomainException(e.args[0])
       if report_page == 'End-Of-Report':

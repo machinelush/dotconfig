@@ -58,11 +58,11 @@ class GroupsService(gdata.apps.service.PropertyService):
       if group_id != '' and is_existed:
         return GROUP_ID_URL % (domain, group_id)
       elif member_id != '':
-        if direct_only:
-          return GROUP_MEMBER_DIRECT_URL % (domain, urllib.quote_plus(member_id),
+        #if direct_only:
+        return GROUP_MEMBER_DIRECT_URL % (domain, urllib.quote_plus(member_id),
                                             self._Bool2Str(direct_only))
-        else:
-          return GROUP_MEMBER_URL % (domain, urllib.quote_plus(member_id))
+        #else:
+        #  return GROUP_MEMBER_URL % (domain, urllib.quote_plus(member_id))
       else:
         return BASE_URL % (domain)
 
@@ -218,6 +218,9 @@ class GroupsService(gdata.apps.service.PropertyService):
     uri = self._ServiceUrl('member', False, group_id, member_id, '')
     properties = {}
     properties['memberId'] = member_id
+    properties['membershipType'] = 'manager'
+    properties['membership_type'] = 'manager'
+    properties['delivery'] = '0'
     return self._PostProperties(uri, properties)
 
   def IsMember(self, member_id, group_id):
